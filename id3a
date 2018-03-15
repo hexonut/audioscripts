@@ -1,0 +1,138 @@
+#!/bin/bash
+cut_track(){
+    echo "$1" | perl -e '$_=<>; my $parens = qr/(\((?:[^()]++|(?-1))*+\))/; s/'$2'$//; m/.*($parens.*)*?$parens$/; $_=$3; m/^\((.*)\)$/;print $1 . "\n"'
+}
+process_dir(){
+    pushd "$1" >/dev/null
+    if [ -n "$2" ]
+    then
+	local album=$album" $2"
+    fi
+    shopt -s nullglob
+    numtracks=`ls *.mp3 *.ogg *.flac|tail -1|cut -f 1 -d " "`
+    for i in *
+    do 
+	if [ -d "$i" ]
+	then
+	    process_dir "$i" "$i"
+	    continue
+	fi
+	tracknum=`echo $i|cut -f 1 -d " "`
+	case "$i" in
+	*.m4a)
+	    echo "Processing $album - $i"
+	    [ -n "$compilation" ] && group="`cut_track \"$i\" \".m4a\"`" 
+	    trackname="`echo $i|sed -e s/'^[0-9][0-9] - '// -e s/.m4a$// -e s/\"($group)\"//`"
+#	    $id3v2 -D "$i" >/dev/null 2>&1
+	    mp4tags -t "$tracknum" -T "$numtracks" \
+	    -A "$album" \
+	    -y "$year" \
+	    -a "$group" \
+	    -g "$v1genre" \
+	    -s "$trackname" \
+	    "$i"
+	    chmod 644 "$i"
+	    ;;
+	*.mp3)
+	    echo "Processing $album - $i"
+	    [ -n "$compilation" ] && group="`cut_track \"$i\" \".mp3\"`" 
+	    trackname="`echo $i|sed -e s/'^[0-9][0-9] - '// -e s/.mp3$// -e s/\"($group)\"//`"
+#	    $id3v2 -D "$i" >/dev/null 2>&1
+	    $id3v2 -T "$tracknum/$numtracks" \
+	    -A "$album" \
+	    -y "$year" \
+	    -a "$group" \
+	    -g "$v2genre" \
+	    -t "$trackname" \
+	    "$i"
+	    mp3info -f -n $tracknum \
+	    -l "$album" \
+	    -y "$year" \
+	    -a "$group" \
+	    -g "$v1genre" \
+	    -t "$trackname" \
+	    "$i"
+	    chmod 644 "$i"
+	    ;;
+	*.ogg)	
+	    [ -n "$compilation" ] && group="`cut_track \"$i\" \".ogg\"`" 
+	    trackname="`echo $i|sed -e s/'^[0-9][0-9] - '// -e s/.ogg$// -e s/\"($group)\"//`"
+	    echo "Processing $album - $i"
+        ( 
+            vorbiscomment -l "$i" | \
+                sed \
+                -e "/^TRACKNUMBER=.*\$/d" \
+				-e "/^ALBUM=.*\$/d" \
+				-e "/^DATE=.*\$/d" \
+				-e "/^ARTIST=.*\$/d" \
+				-e "/^GENRE=.*\$/d" \
+				-e "/^TITLE=.*\$/d" 
+            echo TRACKNUMBER=$tracknum 
+            echo ALBUM=$album 
+            echo DATE=$year 
+            echo ARTIST=$group 
+            echo GENRE=$v2genre 
+            echo TITLE=$trackname
+        ) | vorbiscomment -c - -w "$i"
+	    ;;
+	*.flac)	
+	    [ -n "$compilation" ] && group="`cut_track \"$i\" \".flac\"`" 
+	    trackname="`echo $i|sed -e s/'^[0-9][0-9] - '// -e s/.flac$// -e s/\"($group)\"//`"
+	    echo "Processing $album - $i"
+        metaflac --remove-tag=TRACKNUMBER --remove-tag=ALBUM --remove-tag=DATE --remove-tag=ARTIST --remove-tag=GENRE --remove-tag=TITLE "--set-tag=TRACKNUMBER=$tracknum" "--set-tag=ALBUM=$album" "--set-tag=DATE=$year" "--set-tag=ARTIST=$group" "--set-tag=GENRE=$v2genre" "--set-tag=TITLE=$trackname" "$i"
+	    ;;
+	esac
+    done
+    popd >/dev/null
+}
+
+# STARTS HERE
+case $0 in
+*id3ac)
+	compilation=1
+    ;;
+*id3a)
+    dir=`pwd`
+    if basename "$PWD"|egrep -q '^.+-[0-9]{4}-([^\[]*)(\[.*\])?$'
+    then
+        echo id3aflat
+        group=`basename "$PWD"`
+        group=`echo "$group"|sed s/'^\(.\+\)-\([0-9]\{4\}\)-.*'/'\1'/`
+    else
+        echo id3a
+        group=`dirname "$PWD"`
+        if basename "$group"|egrep -q '^[0-9]{4}-([^\[]*)(\[.*\])?$'
+        then
+            group=`dirname "$group"`
+        fi
+        group=`basename "$group"`
+
+    fi
+	unset compilation
+    ;;
+esac
+
+if [ -z "$1" ]
+then
+    echo "Invalid number of parameters"
+    exit
+else
+    v1genre="$1"
+fi
+if [ -z "$2" ]
+then
+    v2genre="$1"
+else
+    v2genre="$2"
+fi
+id3v2=`which id3v2 2>/dev/null`
+if [ -z id3v2 ]
+then
+    id3v2=true
+fi
+disk=`pwd`
+disk=`basename "$disk"`
+year=`echo "$disk"|sed s/'^\(.\+-\)\?\([0-9]\{4\}\)-.*'/'\2'/`
+album=`echo "$disk"|sed s/'^\(.\+-\)\?[0-9]\{4\}-\([^\[]*\)\(\[.*\]\)\?$'/'\2'/`
+echo "$group", "$year", "$album"
+process_dir .
