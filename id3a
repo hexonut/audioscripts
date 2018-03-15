@@ -86,7 +86,7 @@ process_dir(){
     popd >/dev/null
 }
 
-# STARTS HERE
+# MAIN CODE STARTS HERE
 case $0 in
 *id3ac)
 	compilation=1
@@ -95,11 +95,9 @@ case $0 in
     dir=`pwd`
     if basename "$PWD"|egrep -q '^.+-[0-9]{4}-([^\[]*)(\[.*\])?$'
     then
-        echo id3aflat
         group=`basename "$PWD"`
         group=`echo "$group"|sed s/'^\(.\+\)-\([0-9]\{4\}\)-.*'/'\1'/`
     else
-        echo id3a
         group=`dirname "$PWD"`
         if basename "$group"|egrep -q '^[0-9]{4}-([^\[]*)(\[.*\])?$'
         then
